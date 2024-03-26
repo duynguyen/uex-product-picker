@@ -1,14 +1,12 @@
 import React, { useEffect, useState } from 'react';
 
-import { defaultTheme, Provider, ListView, Item, Text, Image, Heading, Content, Breadcrumbs, ActionButton, Flex, Picker as RSPicker, View, IllustratedMessage, Button, ButtonGroup } from '@adobe/react-spectrum';
+import { defaultTheme, Provider, ListView, Item, Text, Image, Heading, Content, Breadcrumbs, Flex, View, IllustratedMessage, Button, ButtonGroup, TextField } from '@adobe/react-spectrum';
 import Folder from '@spectrum-icons/illustrations/Folder';
 import NotFound from '@spectrum-icons/illustrations/NotFound';
 import Error from '@spectrum-icons/illustrations/Error';
-import Copy from '@spectrum-icons/workflow/Copy';
 
 const Picker = props => {
-  const { blocks, getItems, getCategories, configFile, defaultConfig, handleSelection, handleClose } = props;
-
+  const { getItems, getCategories, searchItems, configFile, defaultConfig, handleSelection, handleClose } = props;
   const [state, setState] = useState({
     items: {},
     configs: {},
@@ -17,8 +15,6 @@ const Picker = props => {
     path: [],
     categories: {},
     loadingState: 'loading',
-    block: null,
-    disabledKeys: new Set(),
     selectedItems: new Set(),
     showSettings: false,
     error: null,
@@ -32,8 +28,7 @@ const Picker = props => {
   const activeConfig = state.selectedConfig ? state.configs[state.selectedConfig] : null;
 
   const clickListItem = (key) => {
-    const block = blocks[state.block] || {};
-    if (!key.startsWith('category:') || block?.selection === 'multiple') {
+    if (!key.startsWith('category:')) {
       return;
     }
     selectFolder(key.replace('category:', ''));
@@ -53,50 +48,18 @@ const Picker = props => {
 
   const selectItem = (item) => {
     const key = item.anchorKey;
-    console.log('on selection change, item:', item)
-    console.log('on selection change, key:', key)
     if (key.startsWith('category:')) {
       selectFolder(key);
     } else {
+      if (state.selectedItems.has(key)) {
+        state.selectedItems.delete(key);
+      } else {
+        state.selectedItems.add(key);
+      }
       setState(state => ({
         ...state,
-        selectedItems: [key],
       }));
     }
-  };
-
-  const copyToClipboard = key => {
-    if (!state.block) {
-      return;
-    }
-
-    let item = null;
-    if (key instanceof Set) {
-      item = [...key]
-        .map(k => k.startsWith('category:') ? state.categories[k.replace('category:', '')] : state.items[k]);
-    } else {
-      item = key.startsWith('category:') ? state.categories[key.replace('category:', '')] : state.items[key];
-    }
-
-    const html = blocks[state.block].output(item);
-    navigator.clipboard.write([
-      new ClipboardItem({
-        'text/plain': new Blob([html], { type: 'text/plain' }),
-        'text/html': new Blob([html], { type: 'text/html' }),
-      }),
-    ]);
-  };
-
-  const calculateDisabledKeys = (block, items, categories) => {
-    // Disable item or folder depending on the block type
-    const disabledKeys = new Set();
-    if (block.type === 'item' && block.selection === 'multiple') {
-      getCategoriesToDisplay(categories).forEach(i => disabledKeys.add(i.key));
-    } else if (block.type === 'folder' && block.selection === 'multiple') {
-      Object.values(items).forEach(i => disabledKeys.add(i.sku));
-    }
-
-    return disabledKeys;
   };
 
   const getCategoriesToDisplay = (categories) => {
@@ -140,13 +103,10 @@ const Picker = props => {
 
     setState(state => {
       const newItems = { ...state.items, ...items };
-      const blockObj = state.block ? blocks[state.block] : {};
-      const disabledKeys = calculateDisabledKeys(blockObj, newItems, state.categories);
 
       return {
         ...state,
         items: newItems,
-        disabledKeys,
         pageInfo,
         loadingState: 'idle',
       }
@@ -160,12 +120,12 @@ const Picker = props => {
       try {
         configs = await fetch(configFile).then(r => r.json());
       } catch (err) {
-          console.error(err);
-          setState(state => ({
-              ...state,
-              error: 'Could not load config file',
-          }));
-          return;
+        console.error(err);
+        setState(state => ({
+          ...state,
+          error: 'Could not load config file',
+        }));
+        return;
       }
       // Ignore metadata
       Object.keys(configs).forEach(key => {
@@ -194,7 +154,6 @@ const Picker = props => {
         path: [],
         categories: {},
         loadingState: 'loading',
-        disabledKeys: new Set(),
         selectedItems: new Set(),
         pageInfo: {
           current_page: 1,
@@ -263,15 +222,12 @@ const Picker = props => {
       });
 
       setState(state => {
-        const blockObj = state.block ? blocks[state.block] : {};
-        const disabledKeys = calculateDisabledKeys(blockObj, items, state.categories);
         const path = getPath(state.categories);
 
         return {
           ...state,
           items,
           path,
-          disabledKeys,
           pageInfo,
           loadingState: 'idle',
         }
@@ -279,7 +235,6 @@ const Picker = props => {
     })();
   }, [state.selectedConfig, state.folder]);
 
-  const currentBlock = blocks[state.block] || {};
   const items = [...getCategoriesToDisplay(state.categories), ...Object.values(state.items)];
 
   if (state.error) {
@@ -292,14 +247,42 @@ const Picker = props => {
     </Provider>;
   }
 
+  const handleSearch = (searchValue) => {
+    if (!searchValue) {
+      setState(state => ({
+        ...state,
+        folder: state.configs['prod']['commerce-root-category-id'],
+        items: {},
+        path: [],
+        loadingState: 'idle',
+      }));
+      return;
+    }
+    searchItems(searchValue, 1, activeConfig).then(([items, pageInfo]) => {
+      Object.values(items).forEach(i => {
+        i.key = i.sku;
+      });
+
+      setState(state => ({
+        ...state,
+        items,
+        folder: null,
+        path: [],
+        pageInfo,
+        loadingState: 'idle',
+      }));
+    });
+  };
+
   return <Provider theme={defaultTheme} height="100%">
     <Flex direction="column" height="100%">
-      <Breadcrumbs onAction={selectFolder} isDisabled={currentBlock.selection === 'multiple'}>
+      <TextField type="text" onChange={handleSearch} />
+      <Breadcrumbs onAction={selectFolder}>
         {state.path.map(c => <Item key={c.key}>{c.name}</Item>)}
       </Breadcrumbs>
-      <Flex height="70vh">
+      <Flex direction='column' height="70vh">
         <ListView aria-label="List of Items"
-          selectionMode="single"
+          selectionMode="multiple"
           selectionStyle="highlight"
           items={items}
           loadingState={state.loadingState}
@@ -307,38 +290,40 @@ const Picker = props => {
           height="100%"
           density="spacious"
           onAction={clickListItem}
-          selectedKeys={state.selectedItems}
+          selectedKeys={Array.from(state.selectedItems)}
           onSelectionChange={selectItem}
-          disabledKeys={state.disabledKeys}
           renderEmptyState={renderEmptyState}
           onLoadMore={onLoadMore}
         >
           {item => {
             if (item.isFolder) {
-              return <Item key={item.key} textValue={item.name} hasChildItems={currentBlock.selection !== 'multiple'}>
+              return <Item key={item.key} textValue={item.name}>
                 <Folder />
                 <Text>{item.name}</Text>
                 {item.childCount > 0 && <Text slot="description">{item.childCount} items</Text>}
-                {currentBlock.selection === 'single' && (currentBlock.type === 'any' || currentBlock.type === 'folder') && <ActionButton aria-label="Copy" onPress={() => copyToClipboard(item.key)}><Copy /></ActionButton>}
               </Item>
+            } else {
+              return <Item key={item.key} textValue={item.name}>
+                {item.images && item.images.length > 0 && <Image src={item.images[0].url} alt={item.name} objectFit="contain" />}
+                <Text><span dangerouslySetInnerHTML={{ __html: item.name }} /></Text>
+              </Item>;
             }
-
-            return <Item key={item.key} textValue={item.name}>
-              {item.images && item.images.length > 0 && <Image src={item.images[0].url} alt={item.name} objectFit="contain" />}
-              <Text><span dangerouslySetInnerHTML={{ __html: item.name }} /></Text>
-              {currentBlock.selection === 'single' && (currentBlock.type === 'any' || currentBlock.type === 'item') && <ActionButton aria-label="Copy" onPress={() => copyToClipboard(item.key)}><Copy /></ActionButton>}
-            </Item>;
           }}
         </ListView>
+        <Flex direction="row" marginTop="size-200">
+          <Text>Selected Items:</Text>
+          {Array.from(state.selectedItems)?.map(selectedItem => (
+            <Text key={selectedItem}>{selectedItem},</Text>
+          ))}
+        </Flex>
       </Flex>
       <ButtonGroup marginTop={50} marginStart="auto">
         <Button variant="secondary" onPress={() => handleClose()}>Cancel</Button>
         <Button variant="accent" onPress={() => {
-          console.log('state.selectedItems:', state.selectedItems);
           if (state.selectedItems.size === 0) {
             return;
           }
-          handleSelection(state.selectedItems[0]);
+          handleSelection(Array.from(state.selectedItems));
         }}>Confirm</Button>
       </ButtonGroup>
     </Flex>

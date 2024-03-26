@@ -2,7 +2,7 @@
  * <license header>
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { attach } from "@adobe/uix-guest";
 import {
   Provider,
@@ -13,16 +13,24 @@ import {
   ActionButton,
   LabeledValue,
 } from "@adobe/react-spectrum";
-import { extensionId } from "./Constants";
+import { TagList } from "./TagList";
+import { extensionId, selectedProductEventName } from "./Constants";
 
 export default function () {
   const [guestConnection, setGuestConnection] = useState();
+  const customCifField = useRef(null);
   const [model, setModel] = useState({});
   const [value, setValue] = useState('');
+  const [selections, setSelections] = useState();
 
   const handleStorageChange = (event) => {
-    if (event.key === 'selectedProduct') {
+    if (event.key === selectedProductEventName) {
       setValue(event.newValue);
+      console.log('Setting value from local storage:', event.newValue);
+      setSelections(event.newValue?.split(',') || []);
+      console.log('Setting selections from local storage:', selections);
+      customCifField.current.focus();
+      localStorage.removeItem(selectedProductEventName);
     }
   };
 
@@ -57,10 +65,17 @@ export default function () {
     }
     const getState = async () => {
       setModel(await guestConnection.host.field.getModel());
-      setValue(await guestConnection.host.field.getValue());
+      setValue(await guestConnection.host.field.getValue() || '');
     };
     getState().catch((e) => console.error("Extension error:", e));
   }, [guestConnection]);
+
+  useEffect(() => {
+    console.log('persisting value:', value);
+    if (guestConnection) {
+      guestConnection.host.field.onChange('', value);
+    }
+  }, [value]);
 
   const showModal = () => {
     guestConnection.host.modal.showUrl({
@@ -71,19 +86,27 @@ export default function () {
     });
   };
 
+  const saveSelectionChanges = (newSelections) => {
+    console.log('New selections:', newSelections);
+    setSelections(newSelections);
+  };
+
   return (
     <Provider theme={defaultTheme} colorScheme='light'>
       <Content>
         <Flex direction='column'>
           <LabeledValue label="Product" value='' />
           <Flex direction='row'>
-            <TextField value={value} flexGrow={1} isReadOnly onChange={onChangeHandler} />
+            <TextField ref={customCifField} value={value} flexGrow={1} isReadOnly onFocus={onChangeHandler}/>
             <ActionButton
               onPress={showModal}
               aria-label='select asset'
               marginStart="size-150">
-              Select asset
+              Select
             </ActionButton>
+          </Flex>
+          <Flex direction='row'>
+            <TagList setSelections={saveSelectionChanges} selections={selections} />
           </Flex>
         </Flex>
       </Content>
