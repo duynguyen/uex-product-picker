@@ -21,23 +21,22 @@ export default function () {
   const customCifField = useRef(null);
   const [model, setModel] = useState({});
   const [value, setValue] = useState('');
-  const [selections, setSelections] = useState();
+  const [selections, setSelections] = useState([]);
+  const [isValueSet, setIsValueSet] = useState(false);
 
   const handleStorageChange = (event) => {
     if (event.key === selectedProductEventName) {
+      setIsValueSet(true);
       setValue(event.newValue);
-      console.log('Setting value from local storage:', event.newValue);
       setSelections(event.newValue?.split(',') || []);
-      console.log('Setting selections from local storage:', selections);
       customCifField.current.focus();
       localStorage.removeItem(selectedProductEventName);
     }
   };
 
-  const onChangeHandler = (newValue) => {
-    // TODO onChange is not triggered when the value is set programmatically (upon local storage change)
-    // TODO onChange api is not working as expected (UE extension issue)
-    guestConnection.host.field.onChange('', newValue);
+  const onChangeHandler = (event) => {
+    const newValue = event.target.value;
+    guestConnection.host.field.onChange(newValue);
 };
 
   const init = async () => {
@@ -65,19 +64,29 @@ export default function () {
     }
     const getState = async () => {
       setModel(await guestConnection.host.field.getModel());
-      setValue(await guestConnection.host.field.getValue() || '');
+      const newValue = await guestConnection.host.field.getValue();
+      setValue(newValue);
+      setSelections(value?.split(',').map((item) => item) || []);
     };
     getState().catch((e) => console.error("Extension error:", e));
   }, [guestConnection]);
 
   useEffect(() => {
-    console.log('persisting value:', value);
-    if (guestConnection) {
-      guestConnection.host.field.onChange('', value);
+    if (guestConnection && !isValueSet) {
+      const getState = async () => {
+        setModel(await guestConnection.host.field.getModel());
+        const newValue = await guestConnection.host.field.getValue();
+        setValue(newValue);
+        setSelections(value?.split(',').map((item) => item) || []);
+      };
+      getState().catch((e) => console.error("Extension error:", e));
     }
+    setIsValueSet(false);
   }, [value]);
 
   const showModal = () => {
+    // save the current value to local storage
+    localStorage.setItem(selectedProductEventName, value);
     guestConnection.host.modal.showUrl({
       title: "Product Picker",
       url: "/index.html#/product-picker-modal",
@@ -87,8 +96,11 @@ export default function () {
   };
 
   const saveSelectionChanges = (newSelections) => {
-    console.log('New selections:', newSelections);
-    setSelections(newSelections);
+    setSelections(newSelections.map((item) => item) || []);
+    const selectedProduct = newSelections.join(',');
+    setIsValueSet(true);
+    setValue(selectedProduct);
+    onChangeHandler({ target: { value: selectedProduct } });
   };
 
   return (
@@ -100,7 +112,7 @@ export default function () {
             <TextField ref={customCifField} value={value} flexGrow={1} isReadOnly onFocus={onChangeHandler}/>
             <ActionButton
               onPress={showModal}
-              aria-label='select asset'
+              aria-label='select product'
               marginStart="size-150">
               Select
             </ActionButton>

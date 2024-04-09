@@ -4,9 +4,11 @@ import { defaultTheme, Provider, ListView, Item, Text, Image, Heading, Content, 
 import Folder from '@spectrum-icons/illustrations/Folder';
 import NotFound from '@spectrum-icons/illustrations/NotFound';
 import Error from '@spectrum-icons/illustrations/Error';
+import { TagList } from '../TagList';
 
 const Picker = props => {
-  const { getItems, getCategories, searchItems, configFile, defaultConfig, handleSelection, handleClose } = props;
+  const { getItems, getCategories, searchItems, configFile, defaultConfig, handleSelection, handleClose, preselectedItems } = props;
+
   const [state, setState] = useState({
     items: {},
     configs: {},
@@ -15,7 +17,7 @@ const Picker = props => {
     path: [],
     categories: {},
     loadingState: 'loading',
-    selectedItems: new Set(),
+    selectedItems: preselectedItems || [],
     showSettings: false,
     error: null,
     pageInfo: {
@@ -51,13 +53,15 @@ const Picker = props => {
     if (key.startsWith('category:')) {
       selectFolder(key);
     } else {
-      if (state.selectedItems.has(key)) {
-        state.selectedItems.delete(key);
+      const selectedItemsSet = new Set(state.selectedItems);
+      if (selectedItemsSet.has(key)) {
+        selectedItemsSet.delete(key);
       } else {
-        state.selectedItems.add(key);
+        selectedItemsSet.add(key);
       }
       setState(state => ({
         ...state,
+        selectedItems: Array.from(selectedItemsSet),
       }));
     }
   };
@@ -154,7 +158,6 @@ const Picker = props => {
         path: [],
         categories: {},
         loadingState: 'loading',
-        selectedItems: new Set(),
         pageInfo: {
           current_page: 1,
           page_size: 0,
@@ -163,6 +166,13 @@ const Picker = props => {
       }));
     })();
   }, []);
+
+  useEffect(() => {
+    setState(state => ({
+      ...state,
+      selectedItems: preselectedItems || [],
+    }));
+  }, [preselectedItems]);
 
   useEffect(() => {
     (async () => {
@@ -274,13 +284,22 @@ const Picker = props => {
     });
   };
 
+  const setTagSelections = (selections) => {
+    setState(state => ({
+      ...state,
+      selectedItems: selections,
+    }));
+  };
+
   return <Provider theme={defaultTheme} height="100%">
-    <Flex direction="column" height="100%">
-      <TextField type="text" onChange={handleSearch} />
-      <Breadcrumbs onAction={selectFolder}>
-        {state.path.map(c => <Item key={c.key}>{c.name}</Item>)}
-      </Breadcrumbs>
-      <Flex direction='column' height="70vh">
+    <Flex direction="column" height="100%" gap="size-200" marginY="size-200">
+      <Flex direction="row" justifyContent="space-between" gap="size-100">
+        <Breadcrumbs onAction={selectFolder}>
+          {state.path.map(c => <Item key={c.key}>{c.name}</Item>)}
+        </Breadcrumbs>
+        <TextField type="text" onChange={handleSearch} />
+      </Flex>
+      <Flex direction='column' height="64vh">
         <ListView aria-label="List of Items"
           selectionMode="multiple"
           selectionStyle="highlight"
@@ -290,7 +309,7 @@ const Picker = props => {
           height="100%"
           density="spacious"
           onAction={clickListItem}
-          selectedKeys={Array.from(state.selectedItems)}
+          selectedKeys={state.selectedItems}
           onSelectionChange={selectItem}
           renderEmptyState={renderEmptyState}
           onLoadMore={onLoadMore}
@@ -311,10 +330,7 @@ const Picker = props => {
           }}
         </ListView>
         <Flex direction="row" marginTop="size-200">
-          <Text>Selected Items:</Text>
-          {Array.from(state.selectedItems)?.map(selectedItem => (
-            <Text key={selectedItem}>{selectedItem},</Text>
-          ))}
+          <TagList setSelections={setTagSelections} selections={state.selectedItems} />
         </Flex>
       </Flex>
       <ButtonGroup marginTop={50} marginStart="auto">
@@ -323,7 +339,7 @@ const Picker = props => {
           if (state.selectedItems.size === 0) {
             return;
           }
-          handleSelection(Array.from(state.selectedItems));
+          handleSelection(state.selectedItems);
         }}>Confirm</Button>
       </ButtonGroup>
     </Flex>

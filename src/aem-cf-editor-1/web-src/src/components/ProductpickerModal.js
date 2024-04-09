@@ -11,7 +11,7 @@ import {
   Heading,
   Divider,
 } from "@adobe/react-spectrum";
-import { extensionId } from "./Constants";
+import { extensionId, selectedProductEventName } from "./Constants";
 import Picker from "./pickers/Picker";
 import getCategoriesInCategory from './pickers/queries/categories.graphql.js';
 import getProductsInCategory from './pickers/queries/products.graphql.js';
@@ -121,6 +121,7 @@ const searchItems = async (searchTerm, page, config) => {
 
 export default function () {
   const [guestConnection, setGuestConnection] = useState();
+  const [selectedItems, setSelectedItems] = useState([]);
   const [endpoint, setEndpoint] = useState("");
   const [token, setToken] = useState("");
 
@@ -129,6 +130,13 @@ export default function () {
       id: extensionId,
     });
     setGuestConnection(connection);
+    const selectedItemsString = localStorage.getItem(selectedProductEventName);
+    let preselectedItems = [];
+    if (selectedItemsString && selectedItemsString != 'null') {
+      preselectedItems = selectedItemsString?.split(',').map((item) => item);
+    }
+    setSelectedItems(preselectedItems);
+    localStorage.removeItem(selectedProductEventName);
   };
 
   useEffect(() => {
@@ -138,7 +146,7 @@ export default function () {
   }, []);
 
   const onSelectionHandler = (products) => {
-    localStorage.setItem('selectedProduct', products);
+    localStorage.setItem(selectedProductEventName, products);
     onCloseHandler();
   };
 
@@ -146,7 +154,6 @@ export default function () {
     guestConnection.host.modal.close();
   };
 
-  // Get basic state from guestConnection
   useEffect(() => {
     if (!guestConnection) {
       return;
@@ -179,6 +186,7 @@ export default function () {
           getCategories={getCategories}
           getItems={getItems}
           searchItems={searchItems}
+          preselectedItems={selectedItems}
           handleSelection={onSelectionHandler}
           handleClose={onCloseHandler}
           configFile={configFile}
